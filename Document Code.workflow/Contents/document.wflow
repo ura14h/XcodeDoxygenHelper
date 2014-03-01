@@ -1,0 +1,645 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>247.1</string>
+	<key>AMApplicationVersion</key>
+	<string>2.1.1</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.1</string>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>#! /usr/bin/ruby
+
+#
+# This script helps us make doxygen comments in obj-c files in Xcode
+#
+# Created by Fred McCann on 03/16/2010.
+# http://www.duckrowing.com
+#
+
+module Duckrowing
+
+  # Convenience class to hold name and type information
+  class Argument
+    def initialize(type = nil, name = nil)
+      self.type = type
+      self.name = name
+    end
+
+    def name
+      @name
+    end
+
+    def name=(name)
+      if name != nil
+        name.gsub!(/^&amp;/,'')
+        name.gsub!(/^\*/,'')
+        name.gsub!(/\[.*$/,'')
+        name.gsub!(/,$/,'')
+        name.gsub!(/;$/,'')
+        name.gsub!(/^\s*/,'')
+        name.gsub!(/\s*$/,'')
+      end
+      if name == '...'
+        @name = 'vararg_list'
+      else
+        @name = name
+      end
+    end
+
+    def type
+      @type
+    end
+
+    def type=(type)
+      if type != nil
+        type.gsub!(/&amp;$/,'')
+        type.gsub!(/\s*\*$/,'')
+        type.gsub!(/^\s*/,'')
+        type.gsub!(/\s*$/,'')
+      end
+      @type = type
+    end
+  end
+
+  # Base implementation of commenter
+  class BaseCommenter
+    #@@selection_marker = '%%%{PBXSelection}%%%'
+    @@selection_marker = ''
+
+    # Creates a new commenter object
+    def initialize(indent, code)
+      @indent = indent
+      @code = code
+      @arguments = []
+      @returns = false
+    end
+
+    # Creates an opening comment
+    def start_comment(description = 'Description')
+      str = "#{@indent}/**\n"
+      str += "#{@indent}\t&lt;##{description}#&gt;\n"
+      str
+    end
+
+    def arguments_comment
+      str = ''
+      @arguments.each do |arg|
+        str += "#{@indent}\t@param #{arg.name} &lt;##{arg.name} description#&gt;\n"
+      end
+      str
+    end
+
+    def return_comment
+      return '' if !@returns
+      "#{@indent}\t@returns &lt;#return value description#&gt;\n"
+    end
+
+    # Creates closing comment
+    def end_comment()
+      "#{@indent} */\n"
+    end
+
+    # Convenience method to detect multiline statements
+    def is_multiline?
+      @code =~ /\n/
+    end
+
+    # Adds inline comments to a comma delimited list
+    def comment_list(list, base_indent='')
+      commented_list = ""
+      ids = list.split(/,/)
+      ids.each do |id|
+        id.gsub!(/\s*$/, '')
+        id.gsub!(/^\s*/, '')
+        list_id = "#{id}"
+        list_id += ',' if id != ids.last
+        id.gsub!(/\=.*$/, '')
+        id.gsub!(/\[.*\]/, '')
+        id.gsub!(/\s*$/, '')
+        id.gsub!(/^\s*/, '')
+        id.gsub!(/;/, '')
+        id.gsub!(/\s*\:\s*\d+/,'')
+        doc_id = id.split(/\s/).last
+        doc_id.gsub!(/\*/, '')
+        commented_list += "#{base_indent}" if id != ids.first
+        commented_list += "#{@indent}\t#{list_id} /**&lt; &lt;##{doc_id} description#&gt; */"
+        commented_list += "\n" if id != ids.last
+      end
+      commented_list
+    end
+
+    # Parses a comma delimited list into an array of Argument objects
+    def parse_c_style_argument_list(str)
+      arguments = []
+      str.split(/,/).each do |a|
+        arg = Argument.new
+        parts = a.split(/\s+/)
+        arg.name = parts.last
+        parts.delete_at(parts.size - 1)
+        arg.type = parts.join(" ")
+        @arguments &lt;&lt; arg
+      end
+    end
+
+    # Add Xcode selection markup to first editable field
+    def select_first_field(str)
+      # Add selection marker to first field
+      matches = str.scan(/\&lt;\#.*\#\&gt;/)
+      if matches.size &gt; 0
+        first_field = matches[0].to_s
+        str.gsub!(/#{first_field}/, "#{@@selection_marker}#{first_field}#{@@selection_marker}")
+      end
+
+      str
+    end
+
+    # Returns a comment above the code and the original section of commented code
+    def document
+      str = start_comment()
+      str += arguments_comment()
+      str += return_comment()
+      str += end_comment()
+      str += "#{@code}\n"
+      select_first_field(str)
+    end
+  end
+
+  class VariableCommenter &lt; BaseCommenter
+    # Adds a basic comment above individual variables and rewrites multiple
+    # declaritions into an inline commented list
+    def document
+      if @code.gsub(/\n/, ' ') =~ /^([^\{]+\,)/
+        commented_code = comment_list(@code)
+        commented_code.sub!(/^\s*/,@indent);
+        select_first_field("#{commented_code}\n")
+      else
+        super
+      end
+    end
+  end
+
+  class PropertyCommenter &lt; BaseCommenter
+    # Adds a basic comment above individual properties
+  end
+
+  class MacroCommenter &lt; BaseCommenter
+    # Parse out args for inclusion in comment
+    def capture_args
+      matches = @code.scan(/\(([^\(\)]*)\)/)
+      parse_c_style_argument_list(matches[0].to_s)
+      @returns = true
+    end
+
+    # Adds a basic comment above individual variables and rewrites multiple
+    # declaritions into an inline commented list
+    def document
+      capture_args if @code =~ /\(/
+      super
+    end
+  end
+
+  # Implementation of commenter to comment C style enums
+  class EnumCommenter &lt; BaseCommenter
+    # Comments identifiers in the code block
+    def comment_code
+      block_match = /\{([^\{\}]*)\}/
+      matches = @code.scan(block_match)
+      return if matches.size != 1
+
+      block = matches[0].to_s
+      @code.gsub!(block_match, "{\n#{comment_list(block)}\n#{@indent}}")
+    end
+
+    # Comments the enum. This will write comments next to each name for a multiline
+    # statement. It will not for single line enumerations.
+    def document
+      comment_code if is_multiline?
+      super
+    end
+  end
+
+  # Implementation of commenter to comment C style enums
+  class StructCommenter &lt; BaseCommenter
+    # Comments semicolon delimited list of struct members
+    def comment_struct_list(list)
+      commented_list = ""
+      ids = list.gsub(/^\s*/,'').gsub(/\s*$/,'').split(/;/)
+      ids.each do |id|
+        id.gsub!(/\s*$/, '')
+        id.gsub!(/^\s*/, '')
+        list_id = "#{id};"
+        base_indent = "\t"
+        commented_list += "#{comment_list(list_id, base_indent)}\n"
+      end
+      commented_list
+    end
+
+    # Comments identifiers in the code block
+    def comment_code
+      block_match = /\{([^\{\}]*)\}/
+      matches = @code.scan(block_match)
+      return if matches.size != 1
+
+      block = matches[0].to_s
+      @code.gsub!(block_match, "{\n#{comment_struct_list(block)}#{@indent}}")
+    end
+
+    # Adds inline comments for members and a comment for the entire struct
+    def document
+      comment_code
+      super
+    end
+  end
+
+  class FunctionCommenter &lt; BaseCommenter
+    # Parse out args for inclusion in comment
+    def capture_args
+      matches = @code.scan(/\(([^\(\)]*)\)/)
+      parse_c_style_argument_list(matches[0].to_s)
+    end
+
+    # Decides whether or not to add a returns tag to comment
+    def capture_return
+      @returns = @code.split(/\(/).first !~ /void/
+    end
+
+    # Adds a basic comment above individual variables and rewrites multiple
+    # declaritions into an inline commented list
+    def document
+      capture_args
+      capture_return
+      super
+    end
+  end
+
+  class MethodCommenter &lt; BaseCommenter
+    TAILMATCH = /[\s*;.*]/
+
+    # Find the return type
+    def capture_return_type
+      matches = @code.scan(/^\s*[+-]\s*\(([^\(\)]*)\)/)
+      return nil if matches.size != 1
+      type = matches[0].to_s.gsub(TAILMATCH, '')
+
+      if type == 'void' || type == 'IBAction'
+        @returns = nil
+      else
+        @returns = type
+      end
+    end
+
+    # Parse out params
+    def capture_parameters
+      params = []
+      matches = @code.scan(/\:\(([^\(]+)\)(\S+)/)
+      matches.each do |m|
+        next if m.size != 2
+        arg = Argument.new
+        arg.type = m[0].to_s.gsub(TAILMATCH, '')
+        arg.name = m[1].to_s.gsub(TAILMATCH, '')
+        @arguments &lt;&lt; arg
+      end
+    end
+
+    # Adds a basic comment above individual variables and rewrites multiple
+    # declaritions into an inline commented list
+    def document
+      capture_parameters
+      capture_return_type
+      super
+    end
+  end
+
+  class Documenter
+    def document(code)
+      code.gsub!(/\s*$/, '')
+      indent = base_indentation(code)
+
+      klass = nil
+
+      if is_objc_property?(code)
+        klass = PropertyCommenter
+      elsif is_objc_method?(code)
+        klass = MethodCommenter
+      elsif is_function?(code)
+        klass = FunctionCommenter
+      elsif is_macro?(code)
+        klass = MacroCommenter
+      elsif is_struct?(code)
+        klass = StructCommenter
+      elsif is_union?(code)
+        klass = StructCommenter
+      elsif is_enum?(code)
+        klass = EnumCommenter
+      else
+        klass = VariableCommenter
+      end
+
+      #puts "USE --&gt; #{klass}"
+      commenter = klass.new(indent, code)
+      commenter.document
+    end
+
+    private
+    def is_objc_method?(code)
+      code =~ /^\s*[+-]/
+    end
+
+    def is_objc_property?(code)
+      code =~ /^\s*\@property/
+    end
+
+    def is_function?(code)
+      !is_macro?(code) &amp;&amp; !is_objc_method?(code) &amp;&amp; code =~ /\(/
+    end
+
+    def is_macro?(code)
+      code =~ /^\s*\#define/
+    end
+
+    def is_enum?(code)
+      code.gsub(/\n/, ' ') =~ /^\s*(\w+\s)?enum.*\{.*\}/
+    end
+
+    def is_struct?(code)
+      code.gsub(/\n/, ' ') =~ /^\s*(\w+\s)?struct.*\{.*\}/
+    end
+
+    def is_union?(code)
+      code.gsub(/\n/, ' ') =~ /^\s*(\w+\s)?union.*\{.*\}/
+    end
+
+    def base_indentation(code)
+      matches = code.scan(/^(\s*)/)
+      return '' if matches.size == 0
+      matches[0].to_s
+    end
+  end
+end
+
+documenter = Duckrowing::Documenter.new
+code = STDIN.read
+replacement = documenter.document(code)
+puts "#{replacement}\n"
+</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>0</integer>
+					<key>shell</key>
+					<string>/usr/bin/ruby</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>Application</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.1</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>1F393630-6A49-4803-9854-FA9DA508E55F</string>
+				<key>Keywords</key>
+				<array>
+					<string>Shell</string>
+					<string>Script</string>
+					<string>Command</string>
+					<string>Run</string>
+					<string>Unix</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>9B46912B-8E8B-4168-982C-1C64AF35DC6B</string>
+				<key>UUID</key>
+				<string>AF5ABBC6-51CA-4346-8E98-0E727078DEF8</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<true/>
+				<key>location</key>
+				<string>306.000000:544.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/English.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<true/>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>state</key>
+	<dict>
+		<key>AMLogTabViewSelectedIndex</key>
+		<integer>0</integer>
+		<key>libraryState</key>
+		<dict>
+			<key>actionsMajorSplitViewState</key>
+			<dict>
+				<key>expandedPosition</key>
+				<real>0.0</real>
+				<key>subviewState</key>
+				<array>
+					<string>0.000000, 0.000000, 381.000000, 521.000000, NO</string>
+					<string>0.000000, 522.000000, 381.000000, 223.000000, NO</string>
+				</array>
+			</dict>
+			<key>actionsMinorSplitViewState</key>
+			<dict>
+				<key>expandedPosition</key>
+				<real>0.0</real>
+				<key>subviewState</key>
+				<array>
+					<string>0.000000, 0.000000, 163.000000, 521.000000, NO</string>
+					<string>164.000000, 0.000000, 217.000000, 521.000000, NO</string>
+				</array>
+			</dict>
+			<key>variablesMajorSplitViewState</key>
+			<dict>
+				<key>expandedPosition</key>
+				<real>0.0</real>
+				<key>subviewState</key>
+				<array>
+					<string>0.000000, 0.000000, 350.000000, 555.000000, NO</string>
+					<string>0.000000, 556.000000, 350.000000, 148.000000, NO</string>
+				</array>
+			</dict>
+			<key>variablesMinorSplitViewState</key>
+			<dict>
+				<key>expandedPosition</key>
+				<real>0.0</real>
+				<key>subviewState</key>
+				<array>
+					<string>0.000000, 0.000000, 163.000000, 555.000000, NO</string>
+					<string>164.000000, 0.000000, 186.000000, 555.000000, NO</string>
+				</array>
+			</dict>
+		</dict>
+		<key>majorSplitViewState</key>
+		<dict>
+			<key>expandedPosition</key>
+			<real>0.0</real>
+			<key>subviewState</key>
+			<array>
+				<string>0.000000, 0.000000, 381.000000, 790.000000, NO</string>
+				<string>382.000000, 0.000000, 612.000000, 790.000000, NO</string>
+			</array>
+		</dict>
+		<key>minorSplitViewState</key>
+		<dict>
+			<key>expandedPosition</key>
+			<real>0.0</real>
+			<key>subviewState</key>
+			<array>
+				<string>0.000000, 0.000000, 612.000000, 599.000000, NO</string>
+				<string>0.000000, 609.000000, 612.000000, 162.000000, NO</string>
+			</array>
+		</dict>
+		<key>windowFrame</key>
+		<string>{{8, 8}, {993, 867}}</string>
+		<key>workflowViewScrollPosition</key>
+		<string>{{0, 0}, {612, 599}}</string>
+	</dict>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>serviceApplicationBundleID</key>
+		<string>com.apple.dt.Xcode</string>
+		<key>serviceApplicationPath</key>
+		<string>/Developer/Applications/Xcode.app</string>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.text</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.text</string>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>
