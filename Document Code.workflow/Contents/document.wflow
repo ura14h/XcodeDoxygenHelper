@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>AMApplicationBuild</key>
-	<string>247.1</string>
+	<string>381</string>
 	<key>AMApplicationVersion</key>
-	<string>2.1.1</string>
+	<string>2.4</string>
 	<key>AMDocumentVersion</key>
 	<string>2</string>
 	<key>actions</key>
@@ -25,7 +25,11 @@
 					</array>
 				</dict>
 				<key>AMActionVersion</key>
-				<string>2.0.1</string>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
 				<key>AMParameterProperties</key>
 				<dict>
 					<key>COMMAND_STRING</key>
@@ -62,6 +66,8 @@
 #
 # Created by Fred McCann on 03/16/2010.
 # http://www.duckrowing.com
+#
+# Modified by Hiroki Ishiura on 02/28/2014.
 #
 
 module Duckrowing
@@ -125,21 +131,21 @@ module Duckrowing
     # Creates an opening comment
     def start_comment(description = 'Description')
       str = "#{@indent}/**\n"
-      str += "#{@indent}\t&lt;##{description}#&gt;\n"
+      str += "#{@indent} * &lt;##{description}#&gt;\n"
       str
     end
 
     def arguments_comment
       str = ''
       @arguments.each do |arg|
-        str += "#{@indent}\t@param #{arg.name} &lt;##{arg.name} description#&gt;\n"
+        str += "#{@indent} * @param #{arg.name} &lt;##{arg.name} description#&gt;\n"
       end
       str
     end
 
     def return_comment
       return '' if !@returns
-      "#{@indent}\t@returns &lt;#return value description#&gt;\n"
+      "#{@indent} * @return &lt;#return value description#&gt;\n"
     end
 
     # Creates closing comment
@@ -204,8 +210,13 @@ module Duckrowing
     # Returns a comment above the code and the original section of commented code
     def document
       str = start_comment()
-      str += arguments_comment()
-      str += return_comment()
+      str_arguments = arguments_comment()
+      str_return = return_comment()
+      if (str_arguments != '') || (str_return != '')
+      str += "#{@indent} * \n"
+      end
+      str += str_arguments
+      str += str_return
       str += end_comment()
       str += "#{@code}\n"
       select_first_field(str)
@@ -420,7 +431,7 @@ module Duckrowing
     def base_indentation(code)
       matches = code.scan(/^(\s*)/)
       return '' if matches.size == 0
-      matches[0].to_s
+      matches[0].join()
     end
   end
 end
@@ -439,14 +450,10 @@ puts "#{replacement}\n"
 					<key>source</key>
 					<string></string>
 				</dict>
-				<key>Application</key>
-				<array>
-					<string>Automator</string>
-				</array>
 				<key>BundleIdentifier</key>
 				<string>com.apple.RunShellScript</string>
 				<key>CFBundleVersion</key>
-				<string>2.0.1</string>
+				<string>2.0.3</string>
 				<key>CanShowSelectedItemsWhenRun</key>
 				<false/>
 				<key>CanShowWhenRun</key>
@@ -546,7 +553,7 @@ puts "#{replacement}\n"
 				<key>isViewVisible</key>
 				<true/>
 				<key>location</key>
-				<string>306.000000:544.000000</string>
+				<string>449.000000:685.000000</string>
 				<key>nibPath</key>
 				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/English.lproj/main.nib</string>
 			</dict>
@@ -638,6 +645,8 @@ puts "#{replacement}\n"
 		<string>com.apple.Automator.text</string>
 		<key>serviceOutputTypeIdentifier</key>
 		<string>com.apple.Automator.text</string>
+		<key>serviceProcessesInput</key>
+		<integer>0</integer>
 		<key>workflowTypeIdentifier</key>
 		<string>com.apple.Automator.servicesMenu</string>
 	</dict>
